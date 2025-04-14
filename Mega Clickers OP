@@ -1,6 +1,6 @@
 --[[ 
     Script by cogaicocak
-    Created: 2025-04-14 03:42:13 UTC
+    Created: 2025-04-14 03:50:08 UTC
 ]]
 
 -- Initialize configuration
@@ -8,12 +8,18 @@ local Config = {
     AutoTap = false,
     AutoRebirth = false,
     AutoUpgrade = false,
-    TapMode = "Normal" -- Normal, Fast, Ultra
+    TapMode = "Normal" -- Normal, Fast, Ultra, TURBO
 }
 
 local cleaning = false
 local AllThreads = {}
 local ResourceController = {}
+local PerformanceMonitor = {
+    failures = 0,
+    maxFailures = 5,
+    lastSuccessful = 0,
+    autoAdjust = true
+}
 
 -- Function to monitor and control resource usage
 function ResourceController:Init()
@@ -39,6 +45,38 @@ function ResourceController:Init()
     end)
 end
 
+-- Performance check function
+local function checkPerformance()
+    task.spawn(function()
+        while Config.AutoTap do
+            local currentTime = tick()
+            if currentTime - PerformanceMonitor.lastSuccessful > 5 then
+                -- Reset script if no successful taps in 5 seconds
+                fullCleanup()
+                task.wait(1)
+                if Config.AutoTap then
+                    startAutoTap()
+                end
+            end
+            task.wait(1)
+        end
+    end)
+end
+
+-- Auto recovery function
+local function autoRecovery()
+    task.spawn(function()
+        while true do
+            if Config.AutoTap and not ResourceController.isSafe then
+                ResourceController.isSafe = true
+                ResourceController.warningLevel = 0
+                startAutoTap()
+            end
+            task.wait(5)
+        end
+    end)
+end
+
 -- Enhanced cleanup function
 local function fullCleanup()
     if cleaning then return end
@@ -59,6 +97,10 @@ local function fullCleanup()
     end
     AllThreads = {}
     
+    -- Reset performance monitor
+    PerformanceMonitor.failures = 0
+    PerformanceMonitor.lastSuccessful = tick()
+    
     -- Clear memory
     task.wait(0.1)
     game:GetService("Debris"):AddItem(Instance.new("Folder"), 0)
@@ -71,11 +113,30 @@ local function fullCleanup()
     cleaning = false
 end
 
--- Optimized tap function
+-- Optimized tap function with performance monitoring
 local function safeTap()
-    pcall(function()
+    local success = pcall(function()
         game:GetService("ReplicatedStorage").Tap:InvokeServer(true)
     end)
+    
+    if success then
+        PerformanceMonitor.failures = math.max(0, PerformanceMonitor.failures - 1)
+        PerformanceMonitor.lastSuccessful = tick()
+    else
+        PerformanceMonitor.failures = PerformanceMonitor.failures + 1
+        
+        if PerformanceMonitor.failures >= PerformanceMonitor.maxFailures and PerformanceMonitor.autoAdjust then
+            -- Auto-adjust speed
+            if Config.TapMode == "TURBO" then
+                Config.TapMode = "Ultra"
+            elseif Config.TapMode == "Ultra" then
+                Config.TapMode = "Fast"
+            elseif Config.TapMode == "Fast" then
+                Config.TapMode = "Normal"
+            end
+            PerformanceMonitor.failures = 0
+        end
+    end
 end
 
 -- Create the UI
@@ -151,7 +212,7 @@ local function UpdateButton(button, enabled)
     button.BackgroundColor3 = enabled and Color3.fromRGB(75, 255, 75) or Color3.fromRGB(255, 75, 75)
 end
 
--- Function to start auto tap with high burst but safe
+-- Function to start auto tap with maximum speed
 local function startAutoTap()
     if not ResourceController.isSafe then return end
     
@@ -163,8 +224,38 @@ local function startAutoTap()
     end
     AllThreads = {}
     
-    -- Base continuous tapping thread
-    local baseThread = task.spawn(function()
+    -- Reset performance monitor
+    PerformanceMonitor.failures = 0
+    PerformanceMonitor.lastSuccessful = tick()
+    
+    -- Multi-threaded burst system
+    local burstConfigs = {
+        Normal = {threads = 3, amount = 500000, delay = 0.01},
+        Fast = {threads = 5, amount = 500000, delay = 0.005},
+        Ultra = {threads = 8, amount = 500000, delay = 0.001},
+        TURBO = {threads = 12, amount = 500000, delay = 0} -- New TURBO mode
+    }
+    
+    local currentConfig = burstConfigs[Config.TapMode]
+    
+    -- Create multiple burst threads
+    for i = 1, currentConfig.threads do
+        local burstThread = task.spawn(function()
+            while Config.AutoTap and ResourceController.isSafe do
+                task.spawn(function()
+                    for j = 1, currentConfig.amount do
+                        if not Config.AutoTap or not ResourceController.isSafe then break end
+                        safeTap()
+                    end
+                end)
+                task.wait(currentConfig.delay)
+            end
+        end)
+        table.insert(AllThreads, burstThread)
+    end
+    
+    -- Continuous rapid tap thread
+    local rapidThread = task.spawn(function()
         while Config.AutoTap and ResourceController.isSafe do
             for i = 1, 500000 do
                 if not Config.AutoTap then break end
@@ -173,62 +264,28 @@ local function startAutoTap()
             task.wait()
         end
     end)
-    table.insert(AllThreads, baseThread)
+    table.insert(AllThreads, rapidThread)
     
-    -- Dynamic burst system with 500k bursts
-    local burstThread = task.spawn(function()
-        local burstConfigs = {
-            Normal = {divisions = 5, tapsPerDivision = 500000, delay = 0.01},
-            Fast = {divisions = 4, tapsPerDivision = 500000, delay = 0.005},
-            Ultra = {divisions = 2, tapsPerDivision = 500000, delay = 0.001}
-        }
-        
+    -- Super burst thread
+    local superBurstThread = task.spawn(function()
         while Config.AutoTap and ResourceController.isSafe do
-            local currentConfig = burstConfigs[Config.TapMode]
-            
-            -- Split 500k burst into divisions
-            for division = 1, currentConfig.divisions do
-                if not Config.AutoTap or not ResourceController.isSafe then break end
-                
-                task.spawn(function()
-                    for i = 1, currentConfig.tapsPerDivision do
-                        if not Config.AutoTap or not ResourceController.isSafe then break end
-                        safeTap()
-                    end
-                end)
-                
-                task.wait(currentConfig.delay)
+            if Config.TapMode == "TURBO" then
+                for i = 1, 10 do
+                    task.spawn(function()
+                        for j = 1, 500000 do
+                            if not Config.AutoTap or not ResourceController.isSafe then break end
+                            safeTap()
+                        end
+                    end)
+                end
             end
-            
-            -- Add small delay before next burst cycle
-            task.wait(0.05)
+            task.wait(0.01)
         end
     end)
-    table.insert(AllThreads, burstThread)
+    table.insert(AllThreads, superBurstThread)
     
-    -- Additional burst thread for consistent high performance
-    local extraBurstThread = task.spawn(function()
-        while Config.AutoTap and ResourceController.isSafe do
-            if not Config.AutoTap then break end
-            
-            -- Extra bursts based on mode
-            local extraBursts = {
-                Normal = {amount = 500000, delay = 0.02},
-                Fast = {amount = 500000, delay = 0.01},
-                Ultra = {amount = 500000, delay = 0.005}
-            }
-            
-            local currentExtra = extraBursts[Config.TapMode]
-            
-            for i = 1, currentExtra.amount do
-                if not Config.AutoTap or not ResourceController.isSafe then break end
-                safeTap()
-            end
-            
-            task.wait(currentExtra.delay)
-        end
-    end)
-    table.insert(AllThreads, extraBurstThread)
+    -- Start performance monitoring
+    checkPerformance()
 end
 
 -- Make frame draggable
@@ -292,7 +349,7 @@ end
 
 -- Speed Mode cycle handler
 SpeedModeButton.MouseButton1Click:Connect(function()
-    local modes = {"Normal", "Fast", "Ultra"}
+    local modes = {"Normal", "Fast", "Ultra", "TURBO"}
     local currentIndex = table.find(modes, Config.TapMode)
     Config.TapMode = modes[currentIndex % #modes + 1]
     SpeedModeButton.Text = "Mode: " .. Config.TapMode
@@ -374,8 +431,7 @@ task.spawn(function()
     end
 end)
 
--- Initialize resource controller
+-- Initialize systems
 ResourceController:Init()
-
--- Setup cleanup handlers
+autoRecovery()
 setupCleanupHandlers()
