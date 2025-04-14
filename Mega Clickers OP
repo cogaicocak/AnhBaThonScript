@@ -401,7 +401,7 @@ task.spawn(function()
     while true do
         if Config.AutoRebirth then
             local RebirthArgs = {
-                [1] = 500000
+                [1] = 100000
             }
             game:GetService("ReplicatedStorage").Rebirth:FireServer(unpack(RebirthArgs))
         end
