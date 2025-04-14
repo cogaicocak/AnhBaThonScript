@@ -405,7 +405,7 @@ task.spawn(function()
             }
             game:GetService("ReplicatedStorage").Rebirth:FireServer(unpack(RebirthArgs))
         end
-        task.wait()
+        task.wait(0.1)
     end
 end)
 
