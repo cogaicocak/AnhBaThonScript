@@ -102,9 +102,9 @@ local function UpdateButton(button, enabled)
     button.BackgroundColor3 = enabled and Color3.fromRGB(75, 255, 75) or Color3.fromRGB(255, 75, 75)
 end
 
--- Function to start auto tap
+-- Function to start auto tap with maximum optimization
 local function startAutoTap()
-    -- Clear any existing threads
+    -- Clear existing threads
     for _, thread in pairs(AllThreads) do
         if type(thread) == "thread" then
             task.cancel(thread)
@@ -112,39 +112,74 @@ local function startAutoTap()
     end
     AllThreads = {}
     
-    -- Create new threads - keep at 100 for stability
-    for i = 1, 100 do
+    -- Base rapid-fire threads (2000 threads liên tục)
+    for i = 1, 2000 do
         local thread = task.spawn(function()
             while Config.AutoTap do
                 if not Config.AutoTap then break end
                 pcall(function()
                     game:GetService("ReplicatedStorage").Tap:InvokeServer(true)
                 end)
-                task.wait()
             end
         end)
         table.insert(AllThreads, thread)
+        
+        if i % 200 == 0 then
+            task.wait(0.001) -- Giảm delay khi tạo threads
+        end
     end
     
-    -- Burst thread with batching
-    local burstThread = task.spawn(function()
+    -- Hyper burst thread system
+    local hyperBurstThread = task.spawn(function()
         while Config.AutoTap do
             if not Config.AutoTap then break end
-            -- Split 500000 into smaller batches
-            for batch = 1, 10 do -- 10 batches
+            
+            -- Ultra mega bursts
+            for megaBatch = 1, 100 do -- Tăng số mega batches
                 if not Config.AutoTap then break end
-                for i = 1, 50000 do -- 50000 per batch = 500000 total
+                
+                for batch = 1, 200 do -- Tăng số regular batches
                     if not Config.AutoTap then break end
+                    
+                    for i = 1, 15000 do -- Tăng số taps mỗi batch
+                        if not Config.AutoTap then break end
+                        pcall(function()
+                            game:GetService("ReplicatedStorage").Tap:InvokeServer(true)
+                        end)
+                    end
+                end
+                task.spawn(function() -- Extra burst trong mỗi mega batch
+                    for i = 1, 50000 do
+                        if not Config.AutoTap then break end
+                        pcall(function()
+                            game:GetService("ReplicatedStorage").Tap:InvokeServer(true)
+                        end)
+                    end
+                end)
+            end
+            
+            task.wait(0.01) -- Minimal delay giữa các cycles
+        end
+    end)
+    table.insert(AllThreads, hyperBurstThread)
+    
+    -- Additional turbo burst thread
+    local turboBurstThread = task.spawn(function()
+        while Config.AutoTap do
+            if not Config.AutoTap then break end
+            for i = 1, 100000 do
+                if not Config.AutoTap then break end
+                task.spawn(function()
+                    if not Config.AutoTap then return end
                     pcall(function()
                         game:GetService("ReplicatedStorage").Tap:InvokeServer(true)
                     end)
-                end
-                task.wait() -- Small delay between batches
+                end)
             end
-            task.wait(0.1) -- Delay before next full burst
+            task.wait(0.05)
         end
     end)
-    table.insert(AllThreads, burstThread)
+    table.insert(AllThreads, turboBurstThread)
 end
 
 AutoTapButton.MouseButton1Click:Connect(function()
