@@ -5,7 +5,31 @@ local Config = {
     AutoUpgrade = false
 }
 
+local cleaning = false
 local AllThreads = {} -- Table to track ALL threads
+
+-- Function to perform full cleanup
+local function fullCleanup()
+    if cleaning then return end
+    cleaning = true
+    
+    Config.AutoTap = false
+    Config.AutoRebirth = false
+    Config.AutoUpgrade = false
+    
+    for _, thread in pairs(AllThreads) do
+        if type(thread) == "thread" then
+            pcall(function()
+                task.cancel(thread)
+            end)
+        end
+    end
+    AllThreads = {}
+    
+    task.wait(0.1)
+    game:GetService("Debris"):AddItem(Instance.new("Folder"), 0)
+    cleaning = false
+end
 
 -- Create the UI
 local ScreenGui = Instance.new("ScreenGui")
@@ -88,53 +112,61 @@ local function startAutoTap()
     end
     AllThreads = {}
     
-    -- Create new threads
+    -- Create new threads - keep at 100 for stability
     for i = 1, 100 do
         local thread = task.spawn(function()
             while Config.AutoTap do
                 if not Config.AutoTap then break end
-                local RS = game:GetService("ReplicatedStorage")
-                RS.Tap:InvokeServer(true)
+                pcall(function()
+                    game:GetService("ReplicatedStorage").Tap:InvokeServer(true)
+                end)
                 task.wait()
             end
         end)
         table.insert(AllThreads, thread)
     end
     
-    -- Burst thread
+    -- Burst thread with batching
     local burstThread = task.spawn(function()
         while Config.AutoTap do
             if not Config.AutoTap then break end
-            for i = 1, 500000 do
+            -- Split 500000 into smaller batches
+            for batch = 1, 10 do -- 10 batches
                 if not Config.AutoTap then break end
-                task.spawn(function()
-                    if not Config.AutoTap then return end
-                    game:GetService("ReplicatedStorage").Tap:InvokeServer(true)
-                end)
+                for i = 1, 50000 do -- 50000 per batch = 500000 total
+                    if not Config.AutoTap then break end
+                    pcall(function()
+                        game:GetService("ReplicatedStorage").Tap:InvokeServer(true)
+                    end)
+                end
+                task.wait() -- Small delay between batches
             end
-            task.wait()
+            task.wait(0.1) -- Delay before next full burst
         end
     end)
     table.insert(AllThreads, burstThread)
 end
 
 AutoTapButton.MouseButton1Click:Connect(function()
+    Config.AutoTap = false -- Set to false first
+    -- Stop all threads
+    for _, thread in pairs(AllThreads) do
+        if type(thread) == "thread" then
+            task.cancel(thread)
+        end
+    end
+    AllThreads = {}
+    -- Force cleanup
+    task.wait()
+    game:GetService("Debris"):AddItem(Instance.new("Folder"), 0)
+    
+    -- Now start new if needed
+    task.wait(0.1) -- Small delay to ensure cleanup
     Config.AutoTap = not Config.AutoTap
     UpdateButton(AutoTapButton, Config.AutoTap)
     
     if Config.AutoTap then
         startAutoTap()
-    else
-        -- Stop all threads
-        for _, thread in pairs(AllThreads) do
-            if type(thread) == "thread" then
-                task.cancel(thread)
-            end
-        end
-        AllThreads = {}
-        -- Force garbage collection
-        task.wait()
-        game:GetService("Debris"):AddItem(Instance.new("Folder"), 0)
     end
 end)
 
@@ -221,21 +253,6 @@ task.spawn(function()
     end
 end)
 
--- Add cleanup on script destruction
-game:GetService("CoreGui").TappingSimulatorGUI.Destroying:Connect(function()
-    Config.AutoTap = false
-    Config.AutoRebirth = false
-    Config.AutoUpgrade = false
-    
-    -- Cancel all threads
-    for _, thread in pairs(AllThreads) do
-        if type(thread) == "thread" then
-            task.cancel(thread)
-        end
-    end
-    AllThreads = {}
-    
-    -- Force cleanup
-    task.wait()
-    game:GetService("Debris"):AddItem(Instance.new("Folder"), 0)
-end)
+-- Add cleanup handlers
+game:GetService("CoreGui").TappingSimulatorGUI.Destroying:Connect(fullCleanup)
+game:GetService("Players").LocalPlayer.CharacterAdded:Connect(fullCleanup)
